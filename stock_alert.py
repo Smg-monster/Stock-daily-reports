@@ -2,16 +2,32 @@ import os
 import io
 import requests
 import pandas as pd
-import urllib3
-
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 THRESHOLD_YI = 25000
 TWSE_URL = "https://www.twse.com.tw/exchangeReport/STOCK_DAY_ALL?response=open_data"
 
+def send_discord(msg):
+    webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
+    if not webhook_url:
+        raise RuntimeError("找不到 DISCORD_WEBHOOK_URL")
+
+    try:
+        r = requests.post(
+            webhook_url,
+            json={"content": msg},
+            timeout=10
+        )
+        r.raise_for_status()
+        print("discord status:", r.status_code)
+        return r
+    except requests.exceptions.Timeout:
+        raise RuntimeError("Discord 發送超時")
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(f"Discord 發送失敗: {e}")
+
 def get_twse_turnover_yi():
     try:
-        r = requests.get(TWSE_URL, timeout=20, verify=False)
+        r = requests.get(TWSE_URL, timeout=20)
         r.raise_for_status()
     except requests.exceptions.Timeout:
         raise RuntimeError("TWSE 抓取超時")
@@ -31,33 +47,14 @@ def get_twse_turnover_yi():
         errors="coerce"
     )
 
-    turnover_yi = df["成交金額"].sum() / 100000000
-    return turnover_yi
-
-def send_discord(msg):
-    webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
-    if not webhook_url:
-        raise RuntimeError("找不到 DISCORD_WEBHOOK_URL")
-
-    try:
-        r = requests.post(
-            webhook_url,
-            json={"content": msg},
-            timeout=10,
-            verify=False
-        )
-        r.raise_for_status()
-        print("discord status:", r.status_code)
-        return r
-    except requests.exceptions.Timeout:
-        raise RuntimeError("Discord 發送超時")
-    except requests.exceptions.RequestException as e:
-        raise RuntimeError(f"Discord 發送失敗: {e}")
+    return df["成交金額"].sum() / 100000000
 
 def main():
     try:
         turnover_yi = get_twse_turnover_yi()
-        status = "已突破 2.5 兆" if turnover_yi >= THRESHOLD_YI else "未突破 2.5 兆"
+        gap = THRESHOLD_YI - turnover_yi
+        status = "已突破 2.5 兆" if turnover_yi >= THRESHOLD_YI else f"距離門檻還差 {gap:,.0f} 億"
+
         print(f"今天台股成交值：{turnover_yi:,.0f} 億")
         print("門檻判斷：", turnover_yi >= THRESHOLD_YI)
 
