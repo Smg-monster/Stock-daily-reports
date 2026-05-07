@@ -3,7 +3,7 @@ import io
 import requests
 import pandas as pd
 
-THRESHOLD_YI = 25000
+THRESHOLD_YI = 1
 TWSE_URL = "https://www.twse.com.tw/exchangeReport/STOCK_DAY_ALL?response=open_data"
 
 def send_discord(msg):
