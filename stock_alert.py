@@ -1,22 +1,27 @@
+import os
+import io
 import requests
 import pandas as pd
-import io
 import urllib3
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-WEBHOOK_URL = "https://discord.com/api/webhooks/1501936628027883553/NWJsszzTj31gyjzvLzm6mFfkGEkEW47T3Y-NEn2OJWMv9QzkDJNnWBkxSIoWuvHpkkkc"
 THRESHOLD_YI = 25000
-
-def send_discord(msg):
-    r = requests.post(WEBHOOK_URL, json={"content": msg}, timeout=15, verify=False)
-    print("discord status:", r.status_code)
-    return r
+TWSE_URL = "https://www.twse.com.tw/exchangeReport/STOCK_DAY_ALL?response=open_data"
 
 def get_twse_turnover_yi():
-    url = "https://www.twse.com.tw/exchangeReport/STOCK_DAY_ALL?response=open_data"
-    text = requests.get(url, timeout=20, verify=False).text
-    df = pd.read_csv(io.StringIO(text))
+    try:
+        r = requests.get(TWSE_URL, timeout=20, verify=False)
+        r.raise_for_status()
+    except requests.exceptions.Timeout:
+        raise RuntimeError("TWSE 抓取超時")
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(f"TWSE 抓取失敗: {e}")
+
+    try:
+        df = pd.read_csv(io.StringIO(r.text))
+    except Exception as e:
+        raise RuntimeError(f"CSV 解析失敗: {e}")
 
     if "成交金額" not in df.columns:
         raise KeyError(f"找不到成交金額欄位，實際欄位: {df.columns.tolist()}")
@@ -25,12 +30,42 @@ def get_twse_turnover_yi():
         df["成交金額"].astype(str).str.replace(",", "", regex=False),
         errors="coerce"
     )
-    return df["成交金額"].sum() / 100000000
+
+    turnover_yi = df["成交金額"].sum() / 100000000
+    return turnover_yi
+
+def send_discord(msg):
+    webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
+    if not webhook_url:
+        raise RuntimeError("找不到 DISCORD_WEBHOOK_URL")
+
+    try:
+        r = requests.post(
+            webhook_url,
+            json={"content": msg},
+            timeout=10,
+            verify=False
+        )
+        r.raise_for_status()
+        print("discord status:", r.status_code)
+        return r
+    except requests.exceptions.Timeout:
+        raise RuntimeError("Discord 發送超時")
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(f"Discord 發送失敗: {e}")
+
+def main():
+    try:
+        turnover_yi = get_twse_turnover_yi()
+        status = "已突破 2.5 兆" if turnover_yi >= THRESHOLD_YI else "未突破 2.5 兆"
+        print(f"今天台股成交值：{turnover_yi:,.0f} 億")
+        print("門檻判斷：", turnover_yi >= THRESHOLD_YI)
+
+        send_discord(f"台股今日成交值 {turnover_yi:,.0f} 億，{status}。")
+
+    except Exception as e:
+        print(f"整體流程失敗: {e}")
+        raise
 
 if __name__ == "__main__":
-    turnover_yi = get_twse_turnover_yi()
-    status = "已突破 2.5 兆" if turnover_yi >= THRESHOLD_YI else "未突破 2.5 兆"
-    print(f"今天台股成交值：{turnover_yi:,.0f} 億")
-    print("門檻判斷：", turnover_yi >= THRESHOLD_YI)
-
-    send_discord(f"台股今日成交值 {turnover_yi:,.0f} 億，{status}。")
+    main()
