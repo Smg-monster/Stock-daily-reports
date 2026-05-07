@@ -1,2 +1,2 @@
 # 股票成交量BOT
-stock-daily-report
+every day report stock-daily
