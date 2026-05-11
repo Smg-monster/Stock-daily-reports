@@ -5,6 +5,7 @@ import pandas as pd
 
 THRESHOLD_YI = 25000
 TWSE_URL = "https://www.twse.com.tw/exchangeReport/STOCK_DAY_ALL?response=open_data"
+LAST_VALUE_FILE = "last_turnover.txt"
 
 def send_discord(turnover_yi, gap, exceeded):
     webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
@@ -31,7 +32,6 @@ def send_discord(turnover_yi, gap, exceeded):
         r = requests.post(webhook_url, json=payload, timeout=10)
         r.raise_for_status()
         print("discord status:", r.status_code)
-        return r
     except requests.exceptions.Timeout:
         raise RuntimeError("Discord 發送超時")
     except requests.exceptions.RequestException as e:
@@ -66,16 +66,35 @@ def get_twse_turnover_yi():
 
     return df[value_col].sum() / 100000000
 
+def read_last_value():
+    if not os.path.exists(LAST_VALUE_FILE):
+        return None
+    try:
+        with open(LAST_VALUE_FILE, "r", encoding="utf-8") as f:
+            return float(f.read().strip())
+    except Exception:
+        return None
+
+def save_last_value(value):
+    with open(LAST_VALUE_FILE, "w", encoding="utf-8") as f:
+        f.write(str(value))
+
 if __name__ == "__main__":
     try:
         turnover_yi = get_twse_turnover_yi()
-        gap = THRESHOLD_YI - turnover_yi
-        exceeded = turnover_yi >= THRESHOLD_YI
+        last_value = read_last_value()
 
-        print(f"今天台股成交值：{turnover_yi:,.0f} 億")
-        print("門檻判斷：", exceeded)
+        print(f"本次成交值：{turnover_yi:,.0f} 億")
+        print(f"上次成交值：{last_value}")
 
-        send_discord(turnover_yi, gap, exceeded)
+        if last_value is not None and round(turnover_yi, 2) == round(last_value, 2):
+            print("成交值沒有變動，不發送 Discord。")
+        else:
+            gap = THRESHOLD_YI - turnover_yi
+            exceeded = turnover_yi >= THRESHOLD_YI
+            send_discord(turnover_yi, gap, exceeded)
+            save_last_value(turnover_yi)
+            print("成交值有變動，已發送 Discord 並更新紀錄。")
 
     except Exception as e:
         print(f"整體流程失敗: {e}")
