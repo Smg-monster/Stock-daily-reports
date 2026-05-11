@@ -8,16 +8,37 @@ on:
     - cron: '1 * * * *'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   run:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
       - run: pip install -r requirements.txt
-      - run: python stock_alert.py
+
+      - name: 執行成交值檢測
+        run: python stock_alert.py
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+      - name: Commit last_turnover.txt if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet -- last_turnover.txt; then
+            echo "last_turnover.txt 沒有變動，不需要 commit"
+          else
+            git add last_turnover.txt
+            git commit -m "chore: update last_turnover.txt"
+            git push
+          fi
