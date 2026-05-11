@@ -1,15 +1,14 @@
 name: daily-report
 
 env:
-  # 除非你有特殊需求，否則這個環境變數通常不需要
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE20: true 
+  # 提前強制進入 Node 24 模式，消除警告
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 on:
   schedule:
-    # 建議改為台灣時間開盤期間（週一至週五 9:00~14:00，對應 UTC 1:00~6:00）
-    # 或是維持每小時跑一次也行，但建議加上手動測試按鈕
-    - cron: '1 * * * *'
-  workflow_dispatch:
+    # 台灣時間 09:01 ~ 14:01 之間每小時執行一次 (UTC 01:01 ~ 06:01)
+    - cron: '1 1-6 * * 1-5'
+  workflow_dispatch: # 允許你手動按按鈕測試
 
 permissions:
   contents: write
@@ -17,36 +16,35 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+
     steps:
       - uses: actions/checkout@v4
         with:
-          # 必須加上這個，否則無法 commit 回去
-          fetch-depth: 0 
+          fetch-depth: 0 # 獲取所有歷史紀錄，確保 push 不會衝突
 
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      # 如果你的 requirements.txt 很簡單，也可以改用：
-      # run: pip install requests pandas
-      - run: |
-          pip install -r requirements.txt
+      # 直接在這邊安裝必要套件，不需要寫 requirements.txt 也可以
+      - run: pip install requests pandas
 
       - name: 執行成交值檢測
         run: python stock_alert.py
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
 
-      - name: Commit and Push if changed
-        # 使用 git add . 或指定檔案，並增加對沒變動時的處理
+      - name: 偵測變動並更新紀錄
         run: |
           git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          
+          git config --global user.email "github-actions[bot]@://github.com"
+
+          # 檢查 last_turnover.txt 是否有變動
           git add last_turnover.txt
           if git diff --staged --quiet; then
-            echo "無變動，跳過 Commit"
+            echo "數據無變動，不需要更新倉庫"
           else
-            git commit -m "update: 自動更新成交值紀錄"
+            git commit -m "chore: 自動更新成交值紀錄"
             git push origin main
           fi
