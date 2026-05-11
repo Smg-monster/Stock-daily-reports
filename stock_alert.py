@@ -5,8 +5,9 @@ import pandas as pd
 
 THRESHOLD_YI = 25000
 TWSE_URL = "https://www.twse.com.tw/exchangeReport/STOCK_DAY_ALL?response=open_data"
+STATE_FILE = "last_turnover.txt"
 
-def send_discord(turnover_yi, gap, exceeded):
+def send_discord(turnover_yi, gap, exceeded, previous_yi=None):
     webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
     if not webhook_url:
         raise RuntimeError("找不到 DISCORD_WEBHOOK_URL")
@@ -14,14 +15,26 @@ def send_discord(turnover_yi, gap, exceeded):
     color = 15548997 if exceeded else 5763719
     status = "已突破 2.5 兆" if exceeded else "未突破 2.5 兆"
 
+    if previous_yi is None:
+        change_text = "首次記錄"
+    else:
+        diff = turnover_yi - previous_yi
+        if diff > 0:
+            change_text = f"增加 {diff:,.0f} 億"
+        elif diff < 0:
+            change_text = f"減少 {abs(diff):,.0f} 億"
+        else:
+            change_text = "無變動"
+
     embed = {
-        "title": "台股日報",
+        "title": "台股成交量更新",
         "color": color,
         "fields": [
-            {"name": "成交值", "value": f"{turnover_yi:,.0f} 億", "inline": True},
+            {"name": "目前成交值", "value": f"{turnover_yi:,.0f} 億", "inline": True},
             {"name": "門檻", "value": "25,000 億", "inline": True},
             {"name": "差額", "value": "已突破" if exceeded else f"還差 {gap:,.0f} 億", "inline": True},
             {"name": "狀態", "value": status, "inline": False},
+            {"name": "本次變動", "value": change_text, "inline": False},
         ]
     }
 
@@ -61,16 +74,33 @@ def get_twse_turnover_yi():
 
     return df["成交金額"].sum() / 100000000
 
+def read_last_turnover():
+    if not os.path.exists(STATE_FILE):
+        return None
+    try:
+        with open(STATE_FILE, "r", encoding="utf-8") as f:
+            return float(f.read().strip())
+    except Exception:
+        return None
+
+def write_last_turnover(turnover_yi):
+    with open(STATE_FILE, "w", encoding="utf-8") as f:
+        f.write(f"{turnover_yi}")
+
 if __name__ == "__main__":
     try:
         turnover_yi = get_twse_turnover_yi()
-        gap = THRESHOLD_YI - turnover_yi
-        exceeded = turnover_yi >= THRESHOLD_YI
+        previous_yi = read_last_turnover()
 
-        print(f"今天台股成交值：{turnover_yi:,.0f} 億")
-        print("門檻判斷：", exceeded)
+        print(f"目前成交值：{turnover_yi:,.0f} 億")
+        print(f"上次成交值：{previous_yi if previous_yi is not None else 'None'}")
 
-        send_discord(turnover_yi, gap, exceeded)
+        if previous_yi is None or turnover_yi != previous_yi:
+            gap = THRESHOLD_YI - turnover_yi
+            exceeded = turnover_yi >= THRESHOLD_YI
+            send_discord(turnover_yi, gap, exceeded, previous_yi)
+
+        write_last_turnover(turnover_yi)
 
     except Exception as e:
         print(f"整體流程失敗: {e}")
