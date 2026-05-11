@@ -2,7 +2,7 @@ name: stock-turnover-watch
 
 on:
   schedule:
-    - cron: '0 */2 * * *'
+    - cron: '0 * * * *'
       timezone: 'Asia/Taipei'
   workflow_dispatch:
 
