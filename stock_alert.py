@@ -94,7 +94,7 @@ if __name__ == "__main__":
             exceeded = turnover_yi >= THRESHOLD_YI
             send_discord(turnover_yi, gap, exceeded)
             save_last_value(turnover_yi)
-            print("成交值有變動，已發送 Discord 並更新紀錄。")
+            print("成交值有變動，已發送 Discord 並更新 last_turnover.txt。")
 
     except Exception as e:
         print(f"整體流程失敗: {e}")
