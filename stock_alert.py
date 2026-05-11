@@ -2,17 +2,13 @@ import os
 import requests
 import pandas as pd
 
-THRESHOLD_YI = 25000
 TWSE_URL = "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL"
 STATE_FILE = "last_turnover.txt"
 
-def send_discord(turnover_yi, gap, exceeded, previous_yi=None):
+def send_discord(turnover_yi, previous_yi):
     webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
     if not webhook_url:
         raise RuntimeError("找不到 DISCORD_WEBHOOK_URL")
-
-    color = 15548997 if exceeded else 5763719
-    status = "已突破 2.5 兆" if exceeded else "未突破 2.5 兆"
 
     if previous_yi is None:
         change_text = "首次記錄"
@@ -25,19 +21,20 @@ def send_discord(turnover_yi, gap, exceeded, previous_yi=None):
         else:
             change_text = "無變動"
 
-    embed = {
-        "title": "台股收盤成交值通知",
-        "color": color,
-        "fields": [
-            {"name": "目前成交值", "value": f"{turnover_yi:,.0f} 億", "inline": True},
-            {"name": "門檻", "value": "25,000 億", "inline": True},
-            {"name": "差額", "value": "已突破" if exceeded else f"還差 {gap:,.0f} 億", "inline": True},
-            {"name": "狀態", "value": status, "inline": False},
-            {"name": "和上次相比", "value": change_text, "inline": False},
+    payload = {
+        "embeds": [
+            {
+                "title": "台股成交值變動通知",
+                "color": 5763719,
+                "fields": [
+                    {"name": "目前成交值", "value": f"{turnover_yi:,.0f} 億", "inline": True},
+                    {"name": "上次成交值", "value": "無" if previous_yi is None else f"{previous_yi:,.0f} 億", "inline": True},
+                    {"name": "本次變動", "value": change_text, "inline": False},
+                ]
+            }
         ]
     }
 
-    payload = {"embeds": [embed]}
     r = requests.post(webhook_url, json=payload, timeout=10)
     r.raise_for_status()
 
@@ -60,10 +57,6 @@ def get_twse_turnover_yi():
     )
 
     turnover_yi = df["成交金額"].sum() / 100000000
-
-    if turnover_yi <= 100:
-        raise RuntimeError(f"成交值異常過低：{turnover_yi:.2f} 億，可能資料尚未更新")
-
     return turnover_yi
 
 def read_last_turnover():
@@ -88,8 +81,6 @@ if __name__ == "__main__":
     print(f"上次成交值：{previous_yi if previous_yi is not None else 'None'}")
 
     if previous_yi is None or turnover_yi != previous_yi:
-        gap = THRESHOLD_YI - turnover_yi
-        exceeded = turnover_yi >= THRESHOLD_YI
-        send_discord(turnover_yi, gap, exceeded, previous_yi)
+        send_discord(turnover_yi, previous_yi)
 
     write_last_turnover(turnover_yi)
