@@ -1,10 +1,13 @@
-name: daily-report
+name: stock-turnover-watch
 
 on:
   schedule:
-    - cron: '0 16 * * *'
+    - cron: '0 */2 * * *'
       timezone: 'Asia/Taipei'
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   run:
@@ -23,3 +26,11 @@ jobs:
       - run: python stock_alert.py
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+      - name: Commit state file
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add last_turnover.txt
+          git diff --cached --quiet || git commit -m "Update last turnover"
+          git push
