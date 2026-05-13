@@ -1,0 +1,51 @@
+name: daily-report
+
+env:
+  # 提前強制進入 Node 24 模式，消除警告
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+on:
+  schedule:
+    # 台灣時間 09:01 ~ 14:01 之間每小時執行一次 (UTC 01:01 ~ 06:01)
+    - cron: '1 1-6 * * 1-5'
+  workflow_dispatch: # 允許在網頁上手動按按鈕測試
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # 獲取所有歷史紀錄，確保 push 不會衝突
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安裝必要套件
+        # 選擇其中一種即可，這裡採用直接安裝 requests 與 pandas
+        run: pip install requests pandas
+
+      - name: 執行成交值檢測
+        run: python stock_alert.py
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+      - name: 偵測變動並更新紀錄
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # 檢查 last_turnover.txt 是否有變動
+          git add last_turnover.txt
+          if git diff --staged --quiet; then
+            echo "數據無變動，不需要更新倉庫"
+          else
+            git commit -m "chore: 自動更新成交值紀錄"
+            git push origin main
+          fi
