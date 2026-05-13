@@ -1,1 +1,50 @@
+name: daily-price
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+on:
+  schedule:
+    # 台灣時間 09:05 ~ 14:05 之間每小時執行一次 (UTC 01:05 ~ 06:05)
+    # 故意與 daily-report 錯開 4 分鐘，避免兩個任務同時執行搶資源
+    - cron: '5 1-6 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - run: pip install requests pandas
+
+      - name: 執行股價檢測
+        # 如果你未來有寫新的指令碼可以換掉這行，目前先維持執行原指令碼
+        run: python stock_alert.py
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+      - name: 偵測變動並更新紀錄
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@github.com"
+
+          # 這裡改成追蹤 daily_price 可能會產生的變動檔案（若無變動則會自動跳過）
+          git add .
+          if git diff --staged --quiet; then
+            echo "數據無變動，不需要更新倉庫"
+          else
+            git commit -m "chore: 自動更新股價紀錄"
+            git push origin main
+          fi
